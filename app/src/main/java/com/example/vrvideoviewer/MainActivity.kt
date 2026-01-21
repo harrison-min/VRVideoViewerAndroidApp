@@ -6,15 +6,27 @@ import android.widget.Button
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import android.net.Uri
+
 
 
 //appactivity
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 
+//video selection
 import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
 import androidx.activity.result.PickVisualMediaRequest
+
+//graphics
+import android.content.Context
+import android.opengl.GLSurfaceView
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
+import android.graphics.SurfaceTexture
+import android.media.MediaPlayer
+import android.opengl.GLES20
+import android.provider.MediaStore
 
 
 class MainActivity : AppCompatActivity() {
@@ -59,10 +71,54 @@ class MainActivity : AppCompatActivity() {
 }
 
 class VRVideoPlayer : AppCompatActivity() {
+    private lateinit var glView : GLSurfaceView
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val videoUri : Uri? = intent.data
-        println("Opened VR Video Player")
+        if (videoUri == null) {
+            finish()
+            return
+        }
+
+        glView = VRGLSurfaceView(this, videoUri)
+        setContentView(glView)
+
     }
+}
+
+class VRGLSurfaceView (context: Context, private val videoUri: Uri) : GLSurfaceView (context) {
+    private val renderer: MyGLRenderer
+
+    init {
+        setEGLContextClientVersion(2)
+
+        renderer = MyGLRenderer(videoUri)
+        setRenderer(renderer)
+        renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+
+    }
+
+}
+
+class MyGLRenderer (private val videoUri: Uri): GLSurfaceView.Renderer {
+    private var surfaceTexture: SurfaceTexture? = null
+    private var textureId: Int = 0
+    private var mediaPlayer: MediaPlayer? = null
+
+    override fun onSurfaceCreated (unused: GL10, config: EGLConfig) {
+
+    }
+
+    override fun onDrawFrame(unused: GL10) {
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+    }
+
+    override fun onSurfaceChanged(unused: GL10, width: Int, height: Int) {
+        GLES20.glViewport(0, 0, width, height)
+    }
+
+
 }
