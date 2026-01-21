@@ -27,6 +27,7 @@ import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.Surface
 
@@ -94,6 +95,27 @@ class VRVideoPlayer : AppCompatActivity() {
 class VRGLSurfaceView (private val context: Context, private val videoUri: Uri) : GLSurfaceView (context) {
     private val renderer: MyGLRenderer
 
+    private val gestureDetector = GestureDetector(context, object: GestureDetector.SimpleOnGestureListener() {
+        override fun onDoubleTap(event: MotionEvent): Boolean {
+            val screenWidth = width
+            val skipTime: Int = 60
+
+
+            if (event.x > screenWidth/2) {
+                renderer.seekRelative(skipTime)
+            } else {
+                renderer.seekRelative(-skipTime)
+            }
+
+            return true
+        }
+
+        override fun onSingleTapUp(event: MotionEvent): Boolean {
+            renderer.togglePause()
+            return true
+        }
+    })
+
     init {
         setEGLContextClientVersion(2)
 
@@ -104,6 +126,8 @@ class VRGLSurfaceView (private val context: Context, private val videoUri: Uri) 
     }
 
     override fun onTouchEvent (event: MotionEvent): Boolean {
+        gestureDetector.onTouchEvent(event)
+
         val x = event.y
         val y = event.x
         when(event.action) {
@@ -218,25 +242,6 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
         )
     }
 
-    fun getPreviousX(): Float {
-        return previousX
-    }
-    fun getPreviousY(): Float {
-        return previousY
-    }
-    fun setPreviousX (newValue: Float) {
-        previousX = newValue
-    }
-    fun setPreviousY (newValue: Float) {
-        previousY = newValue
-    }
-    fun changeAngleX (newAngle: Float) {
-        angleX = (newAngle + angleX).coerceIn(-90f, 90f)
-    }
-    fun changeAngleY (newAngle: Float) {
-        angleY += newAngle
-    }
-
     private val projectionMatrix = FloatArray(16)
     override fun onSurfaceChanged(unused: GL10, width: Int, height: Int) {
         val FOV : Float = 90f
@@ -304,6 +309,45 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
         val textureHandle = GLES20.glGetAttribLocation(shaderProgram, "aTexCoord")
         GLES20.glEnableVertexAttribArray(textureHandle)
         GLES20.glVertexAttribPointer(textureHandle, 2, GLES20.GL_FLOAT, false, 0, textureBuffer)
+    }
+
+    fun getPreviousX(): Float {
+        return previousX
+    }
+    fun getPreviousY(): Float {
+        return previousY
+    }
+    fun setPreviousX (newValue: Float) {
+        previousX = newValue
+    }
+    fun setPreviousY (newValue: Float) {
+        previousY = newValue
+    }
+    fun changeAngleX (newAngle: Float) {
+        angleX = (newAngle + angleX).coerceIn(-90f, 90f)
+    }
+    fun changeAngleY (newAngle: Float) {
+        angleY += newAngle
+    }
+
+    fun seekRelative(seconds: Int) {
+        mediaPlayer?.let {
+            val currentPos = it.currentPosition
+            val jumpTime = seconds * 1000
+            val newPos = (currentPos + jumpTime).coerceIn(0, it.duration)
+
+            it.seekTo(newPos)
+        }
+    }
+
+    fun togglePause() {
+        mediaPlayer?.let { player ->
+            if (player.isPlaying) {
+                player.pause()
+            } else {
+                player.start()
+            }
+        }
     }
 
 }
