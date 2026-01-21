@@ -6,7 +6,7 @@ import android.widget.Button
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-
+import android.util.Log
 
 
 //appactivity
@@ -28,13 +28,12 @@ import android.media.MediaPlayer
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.view.Surface
-import android.provider.MediaStore
 
 
 class MainActivity : AppCompatActivity() {
     private val videoSelector = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) {
-            println("videoSelector: Video selected: $uri")
+            Log.d("VRViewer", "videoSelector: Video selected: $uri")
             // This is where you will eventually start the VR Activity
             val intent = android.content.Intent (
                 this,
@@ -43,7 +42,7 @@ class MainActivity : AppCompatActivity() {
             intent.data = uri
             startActivity(intent)
         } else {
-            println("videoSelector: No video selected")
+            Log.d("VRViewer", "videoSelector: No video selected")
         }
     }
 
@@ -114,27 +113,40 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
     private lateinit var vertexBuffer: java.nio.FloatBuffer
     private lateinit var textureBuffer: java.nio.FloatBuffer
     private lateinit var indexBuffer: java.nio.ShortBuffer
+    private val numberOfHorizontalSlices : Int = 40
+    private val numberOfVerticalSlices: Int = 40
+
+    private val vertexShaderCode = """
+        uniform mat4 uMVPMatrix;
+        attribute vec4 vPosition;
+        attribute vec2 aTexCoord;
+        varying vec2 vTexCoord;
+        void main() {
+            // Multiply the lens by the 3D point to get the screen position
+            gl_Position = uMVPMatrix * vPosition;
+            // Pass the texture coordinate over to the Fragment shader
+            vTexCoord = aTexCoord;
+        }
+    """.trimIndent()
+    private val fragmentShaderCode = """
+        #extension GL_OES_EGL_image_external : require
+        precision mediump float;
+        varying vec2 vTexCoord;
+        uniform samplerExternalOES sTexture;
+        void main() {
+            // Look at the video texture at position vTexCoord and paint the pixel
+            gl_FragColor = texture2D(sTexture, vTexCoord);
+        }
+    """.trimIndent()
+    private var shaderProgram : Int = 0
 
 
     override fun onSurfaceCreated (unused: GL10, config: EGLConfig) {
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f)
         GLES20.glDisable(GLES20.GL_CULL_FACE)
 
-        val textures = IntArray(1)
-        GLES20.glGenTextures(1, textures, 0)
-        textureID = textures[0]
-        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureID)
-
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-
-        sphereData = SphereData (radius = 50f, horizontalSlices = 40, verticalSlices = 40)
-
-        vertexBuffer = sphereData.getVertexBuffer()
-        textureBuffer = sphereData.getTextureBuffer()
-        indexBuffer = sphereData.getTriangleIndexBuffer()
+        bindTextures()
+        loadSphereCalculations()
 
         surfaceTexture = SurfaceTexture(textureID)
         val surface = Surface(surfaceTexture)
@@ -147,19 +159,97 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
             setOnPreparedListener { start() }
         }
 
-
         surface.release()
-
+        linkShaders()
     }
+
 
     override fun onDrawFrame(unused: GL10) {
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
 
+        surfaceTexture?.updateTexImage()
+
+        GLES20.glUseProgram(shaderProgram)
+
+        shaderGLLink()
+
+        GLES20.glDrawElements(
+            GLES20.GL_TRIANGLES,
+            sphereData.horizontalSlices * sphereData.verticalSlices * 6 ,
+            GLES20.GL_UNSIGNED_SHORT,
+            indexBuffer
+
+        )
     }
 
+    private val projectionMatrix = FloatArray(16)
     override fun onSurfaceChanged(unused: GL10, width: Int, height: Int) {
+        val FOV : Float = 90f
+        val viewDistance : Float = 100f
+
+        GLES20.glViewport(0, 0, width, height)
+
+        val ratio: Float = width.toFloat() / height.toFloat()
+
+        android.opengl.Matrix.perspectiveM(projectionMatrix, 0, FOV, ratio, 0.1f, viewDistance)
+    }
+
+
+    private fun bindTextures() {
+        val textures = IntArray(1)
+        GLES20.glGenTextures(1, textures, 0)
+        textureID = textures[0]
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureID)
+
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+    }
+
+    private fun loadSphereCalculations() {
+        //Load sphere tranformation calculations to renderer
+        sphereData = SphereData (radius = 50f, horizontalSlices = numberOfHorizontalSlices, verticalSlices = numberOfVerticalSlices)
+
+        vertexBuffer = sphereData.getVertexBuffer()
+        textureBuffer = sphereData.getTextureBuffer()
+        indexBuffer = sphereData.getTriangleIndexBuffer()
+
 
     }
 
+    private fun linkShaders () {
+        val vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode)
+        val fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode)
+
+        shaderProgram = GLES20.glCreateProgram()
+        GLES20.glAttachShader(shaderProgram, vertexShader)
+        GLES20.glAttachShader(shaderProgram, fragmentShader)
+
+        GLES20.glLinkProgram(shaderProgram)
+    }
+    private fun loadShader(type: Int, shaderCode: String): Int {
+        // Create a shader "bucket" (Vertex or Fragment)
+        val shader = GLES20.glCreateShader(type)
+        // Put the string code into the bucket
+        GLES20.glShaderSource(shader, shaderCode)
+        // Tell the GPU to compile it
+        GLES20.glCompileShader(shader)
+        return shader
+    }
+
+    private fun shaderGLLink() {
+        val matrixHandle = GLES20.glGetUniformLocation(shaderProgram, "uMVPMatrix")
+        GLES20.glUniformMatrix4fv(matrixHandle, 1, false, projectionMatrix, 0)
+
+        val positionHandle = GLES20.glGetAttribLocation(shaderProgram, "vPosition")
+        GLES20.glEnableVertexAttribArray(positionHandle)
+        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 0, vertexBuffer)
+
+        val textureHandle = GLES20.glGetAttribLocation(shaderProgram, "aTexCoord")
+        GLES20.glEnableVertexAttribArray(textureHandle)
+        GLES20.glVertexAttribPointer(textureHandle, 2, GLES20.GL_FLOAT, false, 0, textureBuffer)
+    }
 
 }
 
