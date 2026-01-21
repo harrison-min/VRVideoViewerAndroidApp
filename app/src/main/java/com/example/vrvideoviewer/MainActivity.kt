@@ -27,6 +27,7 @@ import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
+import android.view.MotionEvent
 import android.view.Surface
 
 
@@ -102,6 +103,23 @@ class VRGLSurfaceView (private val context: Context, private val videoUri: Uri) 
 
     }
 
+    override fun onTouchEvent (event: MotionEvent): Boolean {
+        val x = event.y
+        val y = event.x
+        when(event.action) {
+            MotionEvent.ACTION_MOVE -> {
+                val deltaX = x - renderer.getPreviousX()
+                val deltaY = y - renderer.getPreviousY()
+                val rotationSpeed = 0.2f
+
+                renderer.changeAngleX(-deltaX * rotationSpeed)
+                renderer.changeAngleY(-deltaY * rotationSpeed)
+            }
+        }
+        renderer.setPreviousX(x)
+        renderer.setPreviousY(y)
+        return true
+    }
 }
 
 class MyGLRenderer (private val context: Context, private val videoUri: Uri): GLSurfaceView.Renderer {
@@ -163,11 +181,29 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
         linkShaders()
     }
 
+    private val modelMatrix = FloatArray(16)
+    private val viewMatrix = FloatArray(16)
+    private val mvpMatrix = FloatArray(16)
+    private val tempMatrix = FloatArray(16)
+
+    private var angleX: Float = 0f
+    private var angleY: Float = 0f
+    private var previousX: Float = 0f
+    private var previousY: Float = 0f
 
     override fun onDrawFrame(unused: GL10) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
 
         surfaceTexture?.updateTexImage()
+
+        android.opengl.Matrix.setIdentityM(modelMatrix, 0)
+        android.opengl.Matrix.rotateM(modelMatrix, 0, angleX, 1f, 0f, 0f)
+        android.opengl.Matrix.rotateM(modelMatrix, 0, angleY, 0f, 1f, 0f)
+        android.opengl.Matrix.setLookAtM(viewMatrix, 0, 0f, 0f, 0.1f, 0f, 0f, 0f, 0f, 1.0f, 0f )
+
+        android.opengl.Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
+        android.opengl.Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
+
 
         GLES20.glUseProgram(shaderProgram)
 
@@ -180,6 +216,25 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
             indexBuffer
 
         )
+    }
+
+    fun getPreviousX(): Float {
+        return previousX
+    }
+    fun getPreviousY(): Float {
+        return previousY
+    }
+    fun setPreviousX (newValue: Float) {
+        previousX = newValue
+    }
+    fun setPreviousY (newValue: Float) {
+        previousY = newValue
+    }
+    fun changeAngleX (newAngle: Float) {
+        angleX = (newAngle + angleX).coerceIn(-90f, 90f)
+    }
+    fun changeAngleY (newAngle: Float) {
+        angleY += newAngle
     }
 
     private val projectionMatrix = FloatArray(16)
@@ -240,7 +295,7 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
 
     private fun shaderGLLink() {
         val matrixHandle = GLES20.glGetUniformLocation(shaderProgram, "uMVPMatrix")
-        GLES20.glUniformMatrix4fv(matrixHandle, 1, false, projectionMatrix, 0)
+        GLES20.glUniformMatrix4fv(matrixHandle, 1, false, mvpMatrix, 0)
 
         val positionHandle = GLES20.glGetAttribLocation(shaderProgram, "vPosition")
         GLES20.glEnableVertexAttribArray(positionHandle)
