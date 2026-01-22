@@ -22,7 +22,8 @@
         </activity>
         <activity
             android:name=".VRVideoPlayer"
-            android:exported="false">
+            android:theme="@style/Theme.VRVideoViewer.Fullscreen"
+            android:configChanges="orientation|screenSize|keyboardHidden">
         </activity>
     </application>
 

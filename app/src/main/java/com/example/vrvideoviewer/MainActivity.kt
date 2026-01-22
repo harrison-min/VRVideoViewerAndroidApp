@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
 }
 
 class VRVideoPlayer : AppCompatActivity() {
-    private lateinit var glView : GLSurfaceView
+    private lateinit var glView : VRGLSurfaceView
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -88,7 +88,22 @@ class VRVideoPlayer : AppCompatActivity() {
 
         glView = VRGLSurfaceView(this, videoUri)
         setContentView(glView)
+    }
 
+    override fun onPause() {
+        super.onPause()
+        glView.onPause()
+        glView.pauseVideo()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        glView.onResume()
+    }
+
+    override fun onDestroy () {
+        super.onDestroy()
+        glView.shutdownPlayer()
     }
 }
 
@@ -96,6 +111,12 @@ class VRGLSurfaceView (private val context: Context, private val videoUri: Uri) 
     private val renderer: MyGLRenderer
 
     private val gestureDetector = GestureDetector(context, object: GestureDetector.SimpleOnGestureListener() {
+
+        override fun onSingleTapConfirmed(event: MotionEvent): Boolean {
+            renderer.togglePause()
+            return true
+        }
+
         override fun onDoubleTap(event: MotionEvent): Boolean {
             val screenWidth = width
             val skipTime: Int = 60
@@ -110,10 +131,6 @@ class VRGLSurfaceView (private val context: Context, private val videoUri: Uri) 
             return true
         }
 
-        override fun onSingleTapUp(event: MotionEvent): Boolean {
-            renderer.togglePause()
-            return true
-        }
     })
 
     init {
@@ -134,7 +151,7 @@ class VRGLSurfaceView (private val context: Context, private val videoUri: Uri) 
             MotionEvent.ACTION_MOVE -> {
                 val deltaX = x - renderer.getPreviousX()
                 val deltaY = y - renderer.getPreviousY()
-                val rotationSpeed = 0.2f
+                val rotationSpeed = 0.15f
 
                 renderer.changeAngleX(-deltaX * rotationSpeed)
                 renderer.changeAngleY(-deltaY * rotationSpeed)
@@ -143,6 +160,14 @@ class VRGLSurfaceView (private val context: Context, private val videoUri: Uri) 
         renderer.setPreviousX(x)
         renderer.setPreviousY(y)
         return true
+    }
+
+    fun pauseVideo () {
+        renderer.pauseVideo()
+    }
+
+    fun shutdownPlayer() {
+        renderer.releasePlayer()
     }
 }
 
@@ -184,6 +209,11 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
 
 
     override fun onSurfaceCreated (unused: GL10, config: EGLConfig) {
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
+
+
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f)
         GLES20.glDisable(GLES20.GL_CULL_FACE)
 
@@ -243,8 +273,9 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
     }
 
     private val projectionMatrix = FloatArray(16)
+    private val FOV : Float = 70f
     override fun onSurfaceChanged(unused: GL10, width: Int, height: Int) {
-        val FOV : Float = 90f
+
         val viewDistance : Float = 100f
 
         GLES20.glViewport(0, 0, width, height)
@@ -324,7 +355,7 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
         previousY = newValue
     }
     fun changeAngleX (newAngle: Float) {
-        angleX = (newAngle + angleX).coerceIn(-90f, 90f)
+        angleX = (newAngle + angleX).coerceIn(-90f + FOV/2, 90f - FOV/2)
     }
     fun changeAngleY (newAngle: Float) {
         angleY += newAngle
@@ -349,6 +380,25 @@ class MyGLRenderer (private val context: Context, private val videoUri: Uri): GL
             }
         }
     }
+
+    fun pauseVideo () {
+        mediaPlayer?.let { player ->
+            if (player.isPlaying) {
+               player.pause()
+            }
+        }
+    }
+    fun releasePlayer () {
+        mediaPlayer?.let {
+            it.stop()
+            it.release()
+        }
+
+        mediaPlayer = null
+        surfaceTexture?.release()
+        surfaceTexture = null
+    }
+
 
 }
 

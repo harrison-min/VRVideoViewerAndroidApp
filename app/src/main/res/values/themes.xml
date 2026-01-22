@@ -1,9 +1,12 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.VRVideoViewer" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+<resources>
+
+    <style name="Theme.VRVideoViewer" parent="Theme.Material3.DayNight.NoActionBar">
     </style>
 
-    <style name="Theme.VRVideoViewer" parent="Base.Theme.VRVideoViewer" />
+    <style name="Theme.VRVideoViewer.Fullscreen" parent="Theme.VRVideoViewer">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+
 </resources>
